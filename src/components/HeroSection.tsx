@@ -18,7 +18,7 @@ const HeroSection = () => {
             transition={{ duration: 0.7 }}
             className="flex-1"
           >
-            <img src={logo} alt="AIPi Planner" width={320} height={320} className="mx-auto" />
+            <img src={logo} alt="مخطط الرحلات" className="mx-auto w-80 h-80 md:w-[420px] md:h-[420px] lg:w-[480px] lg:h-[480px]" />
           </motion.div>
 
           <motion.div
