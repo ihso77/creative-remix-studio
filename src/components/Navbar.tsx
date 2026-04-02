@@ -1,7 +1,21 @@
 import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import logo from "@/assets/logo.png";
 
 const Navbar = () => {
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+      setUser(session?.user ?? null);
+    });
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   return (
     <nav className="fixed top-0 right-0 left-0 z-50 bg-card/80 backdrop-blur-md border-b border-border">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
@@ -9,13 +23,24 @@ const Navbar = () => {
           <img src={logo} alt="مخطط الرحلات" width={40} height={40} />
           <span className="text-lg font-bold text-foreground">مخطط الرحلات</span>
         </Link>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">
             الرئيسية
           </Link>
-          <Link to="/plan" className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">
-            ابدأ التخطيط
-          </Link>
+          {user ? (
+            <Link to="/plan" className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">
+              لوحة التخطيط
+            </Link>
+          ) : (
+            <>
+              <Link to="/auth" className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">
+                تسجيل الدخول
+              </Link>
+              <Link to="/auth" className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">
+                إنشاء حساب
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </nav>
