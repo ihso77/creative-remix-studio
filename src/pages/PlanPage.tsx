@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Send, Sparkles, MapPin, Calendar, Users, Loader2, Save, LogOut, History } from "lucide-react";
+import { Send, Sparkles, MapPin, Calendar, Users, Loader2, Save, LogOut, History, GraduationCap, Wallet, Bus, ClipboardList, Tag } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -20,6 +20,11 @@ const AIPlannerPage = () => {
   const [students, setStudents] = useState("");
   const [days, setDays] = useState("");
   const [interests, setInterests] = useState("");
+  const [tripType, setTripType] = useState("");
+  const [budget, setBudget] = useState("");
+  const [gradeLevel, setGradeLevel] = useState("");
+  const [transportation, setTransportation] = useState("");
+  const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<TripSuggestion | null>(null);
@@ -60,7 +65,7 @@ const AIPlannerPage = () => {
 
     try {
       const { data, error } = await supabase.functions.invoke("trip-suggest", {
-        body: { destination, students, days, interests },
+        body: { destination, students, days, interests, tripType, budget, gradeLevel, transportation, notes },
       });
 
       if (error) throw error;
@@ -164,6 +169,25 @@ const AIPlannerPage = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-foreground mb-1">
+                    <Tag className="w-4 h-4 inline ml-1" />
+                    نوع الرحلة
+                  </label>
+                  <select
+                    value={tripType}
+                    onChange={(e) => setTripType(e.target.value)}
+                    className="w-full bg-background border border-input rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring appearance-none"
+                  >
+                    <option value="">اختر نوع الرحلة</option>
+                    <option value="تعليمية">رحلة تعليمية</option>
+                    <option value="ترفيهية">رحلة ترفيهية</option>
+                    <option value="ثقافية">رحلة ثقافية</option>
+                    <option value="رياضية">رحلة رياضية</option>
+                    <option value="علمية">رحلة علمية</option>
+                    <option value="مغامرات">رحلة مغامرات</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-foreground mb-1">
                     <Users className="w-4 h-4 inline ml-1" />
                     عدد الطلاب
                   </label>
@@ -174,6 +198,23 @@ const AIPlannerPage = () => {
                     placeholder="25"
                     className="w-full bg-background border border-input rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-foreground mb-1">
+                    <GraduationCap className="w-4 h-4 inline ml-1" />
+                    الصف الدراسي
+                  </label>
+                  <select
+                    value={gradeLevel}
+                    onChange={(e) => setGradeLevel(e.target.value)}
+                    className="w-full bg-background border border-input rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring appearance-none"
+                  >
+                    <option value="">اختر الصف</option>
+                    <option value="1-3">الصفوف الأولية (1-3)</option>
+                    <option value="4-6">الصفوف المتوسطة الدنيا (4-6)</option>
+                    <option value="7-9">الصفوف المتوسطة العليا (7-9)</option>
+                    <option value="10-12">الصفوف الثانوية (10-12)</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-foreground mb-1">
@@ -190,6 +231,38 @@ const AIPlannerPage = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-foreground mb-1">
+                    <Wallet className="w-4 h-4 inline ml-1" />
+                    الميزانية لكل طالب (ر.ع)
+                  </label>
+                  <input
+                    type="number"
+                    value={budget}
+                    onChange={(e) => setBudget(e.target.value)}
+                    placeholder="مثال: 50"
+                    className="w-full bg-background border border-input rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-foreground mb-1">
+                    <Bus className="w-4 h-4 inline ml-1" />
+                    وسيلة النقل
+                  </label>
+                  <select
+                    value={transportation}
+                    onChange={(e) => setTransportation(e.target.value)}
+                    className="w-full bg-background border border-input rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring appearance-none"
+                  >
+                    <option value="">اختر وسيلة النقل</option>
+                    <option value="حافلة مدرسية">حافلة مدرسية</option>
+                    <option value="باص سياحي">باص سياحي</option>
+                    <option value="طائرة">طائرة</option>
+                    <option value="قارب">قارب / باص بحري</option>
+                    <option value="قطار">قطار</option>
+                    <option value="سيارات خاصة">سيارات خاصة</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-foreground mb-1">
                     <Sparkles className="w-4 h-4 inline ml-1" />
                     الاهتمامات
                   </label>
@@ -201,6 +274,20 @@ const AIPlannerPage = () => {
                     className="w-full bg-background border border-input rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-foreground mb-1">
+                  <ClipboardList className="w-4 h-4 inline ml-1" />
+                  ملاحظات إضافية
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="أي تفاصيل إضافية ترغب بإضافتها... مثل: يجب توفير وجبات خفيفة، يوجد طلاب ذوي احتياجات خاصة..."
+                  rows={3}
+                  className="w-full bg-background border border-input rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                />
               </div>
 
               <button

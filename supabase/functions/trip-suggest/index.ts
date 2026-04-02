@@ -9,7 +9,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { destination, students, days, interests } = await req.json();
+    const { destination, students, days, interests, tripType, budget, gradeLevel, transportation, notes } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
@@ -36,9 +36,14 @@ serve(async (req) => {
 
     const userPrompt = `أريد تخطيط رحلة مدرسية بالتفاصيل التالية:
 - الوجهة المفضلة: ${destination || "أي مكان مناسب"}
+- نوع الرحلة: ${tripType || "غير محدد"}
 - عدد الطلاب: ${students || "غير محدد"}
+- الصف الدراسي: ${gradeLevel || "غير محدد"}
 - عدد الأيام: ${days || "يوم واحد"}
+- الميزانية لكل طالب: ${budget ? budget + " ر.ع" : "غير محددة"}
+- وسيلة النقل: ${transportation || "غير محددة"}
 - الاهتمامات: ${interests || "عامة"}
+- ملاحظات إضافية: ${notes || "لا توجد"}
 
 اقترح أفضل وجهة مع تفاصيل كاملة.`;
 
