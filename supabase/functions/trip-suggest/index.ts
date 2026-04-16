@@ -21,6 +21,8 @@ serve(async (req) => {
 - المدة المقترحة
 - نصائح مهمة للرحلة
 - التكلفة التقريبية للشخص الواحد
+- إحداثيات الوجهة (latitude و longitude)
+- حالة الطقس المتوقعة في الوجهة (الحرارة والوصف)
 
 أجب دائماً بصيغة JSON بالشكل التالي:
 {
@@ -29,10 +31,17 @@ serve(async (req) => {
   "activities": ["نشاط 1", "نشاط 2", "نشاط 3", "نشاط 4"],
   "duration": "المدة",
   "tips": "نصائح مهمة",
-  "estimated_cost": "التكلفة التقريبية"
+  "estimated_cost": "التكلفة التقريبية",
+  "latitude": 23.5,
+  "longitude": 58.3,
+  "weather": {
+    "temperature": "32°C",
+    "description": "مشمس وحار",
+    "recommendation": "يُنصح بارتداء ملابس خفيفة واستخدام واقي شمس"
+  }
 }
 
-لا تكتب أي شيء خارج JSON.`;
+لا تكتب أي شيء خارج JSON. تأكد من أن الإحداثيات دقيقة وحقيقية للوجهة المقترحة.`;
 
     const userPrompt = `أريد تخطيط رحلة مدرسية بالتفاصيل التالية:
 - الوجهة المفضلة: ${destination || "أي مكان مناسب"}
@@ -45,7 +54,7 @@ serve(async (req) => {
 - الاهتمامات: ${interests || "عامة"}
 - ملاحظات إضافية: ${notes || "لا توجد"}
 
-اقترح أفضل وجهة مع تفاصيل كاملة.`;
+اقترح أفضل وجهة مع تفاصيل كاملة بما فيها الإحداثيات وحالة الطقس.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -83,7 +92,6 @@ serve(async (req) => {
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || "";
     
-    // Extract JSON from the response
     let suggestion;
     try {
       const jsonMatch = content.match(/\{[\s\S]*\}/);
