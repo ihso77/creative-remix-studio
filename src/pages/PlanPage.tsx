@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Sparkles, MapPin, Calendar, Users, Loader2, Save, LogOut, History, GraduationCap, Wallet, Bus, ClipboardList, Tag, Volume2, VolumeX, CloudSun, Accessibility, Eye } from "lucide-react";
+import { Send, Sparkles, MapPin, Calendar, Users, Loader2, Save, LogOut, History, GraduationCap, Wallet, Bus, ClipboardList, Tag, Volume2, VolumeX, CloudSun, Accessibility, Eye, Mic, MicOff, Captions, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -16,6 +16,53 @@ L.Icon.Default.mergeOptions({
   iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
   shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
 });
+
+// SpeechRecognition type declarations for browser API
+interface SpeechRecognitionEvent {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionErrorEvent {
+  error: string;
+  message?: string;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  isFinal: boolean;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+interface SpeechRecognitionInstance extends EventTarget {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  onstart: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognitionInstance;
+    webkitSpeechRecognition: new () => SpeechRecognitionInstance;
+  }
+}
 
 interface WeatherInfo {
   temperature: string;
@@ -33,6 +80,13 @@ interface TripSuggestion {
   latitude?: number;
   longitude?: number;
   weather?: WeatherInfo;
+}
+
+interface TranscriptEntry {
+  id: string;
+  text: string;
+  timestamp: Date;
+  isFinal: boolean;
 }
 
 const AIPlannerPage = () => {
@@ -54,8 +108,46 @@ const AIPlannerPage = () => {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [spokenText, setSpokenText] = useState("");
   const [highContrast, setHighContrast] = useState(false);
+
+  // Live Captions state (hearing impairment accessibility)
+  const [isLiveCaptionsActive, setIsLiveCaptionsActive] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState<TranscriptEntry[]>([]);
+  const [interimText, setInterimText] = useState("");
+  const [speechSupported, setSpeechSupported] = useState(true);
+  const [showCaptionsPanel, setShowCaptionsPanel] = useState(true);
+
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const transcriptEndRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+
+  // Auto-scroll transcript to bottom
+  useEffect(() => {
+    if (transcriptEndRef.current) {
+      transcriptEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [liveTranscript, interimText]);
+
+  // Cleanup speech recognition on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }
+    };
+  }, []);
+
+  // Check speech recognition support
+  useEffect(() => {
+    const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionAPI) {
+      setSpeechSupported(false);
+    }
+  }, []);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
@@ -95,9 +187,9 @@ const AIPlannerPage = () => {
 
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      
+
       setResult(data.suggestion);
-      toast.success("تم إنشاء الاقتراح بنجاح! ✨");
+      toast.success("تم إنشاء الاقتراح بنجاح!");
     } catch (err: any) {
       toast.error(err.message || "حدث خطأ في الذكاء الاصطناعي");
     } finally {
@@ -118,7 +210,7 @@ const AIPlannerPage = () => {
         ai_suggestion: result as any,
       });
       if (error) throw error;
-      toast.success("تم حفظ الرحلة! 🎉");
+      toast.success("تم حفظ الرحلة!");
       loadTrips();
     } catch (err: any) {
       toast.error(err.message || "خطأ في الحفظ");
@@ -146,7 +238,7 @@ const AIPlannerPage = () => {
 
   const handleSpeak = useCallback(() => {
     if (!result) return;
-    
+
     if (isSpeaking) {
       window.speechSynthesis.cancel();
       setIsSpeaking(false);
@@ -155,7 +247,7 @@ const AIPlannerPage = () => {
 
     const text = buildSpeechText(result);
     setSpokenText(text);
-    
+
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "ar-SA";
     utterance.rate = 0.9;
@@ -165,6 +257,103 @@ const AIPlannerPage = () => {
     setIsSpeaking(true);
     window.speechSynthesis.speak(utterance);
   }, [result, isSpeaking, buildSpeechText]);
+
+  // ===== LIVE CAPTIONS - Speech to Text for Hearing Impaired =====
+  const toggleLiveCaptions = useCallback(() => {
+    if (isLiveCaptionsActive) {
+      // Stop listening
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          recognitionRef.current.abort();
+        }
+      }
+      setIsLiveCaptionsActive(false);
+      setInterimText("");
+      toast.success("تم إيقاف الترجمة الحية");
+    } else {
+      // Start listening
+      const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognitionAPI) {
+        toast.error("متصفحك لا يدعم التعرف على الصوت. يرجى استخدام Chrome أو Edge.");
+        return;
+      }
+
+      const recognition = new SpeechRecognitionAPI();
+      recognition.lang = "ar-SA";
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsLiveCaptionsActive(true);
+        toast.success("تم تفعيل الترجمة الحية - تحدث الآن!");
+      };
+
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
+        let interim = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          if (result.isFinal) {
+            const transcriptText = result[0].transcript.trim();
+            if (transcriptText) {
+              setLiveTranscript((prev) => [
+                ...prev,
+                {
+                  id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+                  text: transcriptText,
+                  timestamp: new Date(),
+                  isFinal: true,
+                },
+              ]);
+            }
+          } else {
+            interim += result[0].transcript;
+          }
+        }
+        setInterimText(interim);
+      };
+
+      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+        if (event.error === "no-speech") {
+          // This is normal, just restart
+          return;
+        }
+        if (event.error === "not-allowed") {
+          toast.error("يرجى السماح بالوصول إلى الميكروفون لتفعيل الترجمة الحية");
+          setIsLiveCaptionsActive(false);
+          return;
+        }
+        console.error("Speech recognition error:", event.error);
+      };
+
+      recognition.onend = () => {
+        // Auto-restart if still active (continuous listening)
+        if (recognitionRef.current) {
+          try {
+            recognitionRef.current.start();
+          } catch (e) {
+            // If it fails to restart, stop
+            setIsLiveCaptionsActive(false);
+          }
+        }
+      };
+
+      recognitionRef.current = recognition;
+      try {
+        recognition.start();
+      } catch (e) {
+        toast.error("حدث خطأ في تشغيل الترجمة الحية");
+      }
+    }
+  }, [isLiveCaptionsActive]);
+
+  const clearTranscript = useCallback(() => {
+    setLiveTranscript([]);
+    setInterimText("");
+    toast.success("تم مسح الترجمة");
+  }, []);
 
   const contrastClass = highContrast ? "contrast-125 font-bold" : "";
 
@@ -188,6 +377,21 @@ const AIPlannerPage = () => {
               <p className="text-muted-foreground text-sm mt-1">أدخل التفاصيل وسيقترح الذكاء الاصطناعي أفضل الوجهات مع خريطة وطقس</p>
             </div>
             <div className="flex gap-2 flex-wrap">
+              {/* Live Captions Toggle - Hearing Impairment Feature */}
+              {speechSupported && (
+                <button
+                  onClick={toggleLiveCaptions}
+                  title={isLiveCaptionsActive ? "إيقاف الترجمة الحية" : "تفعيل الترجمة الحية لذوي الإعاقة السمعية"}
+                  className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-bold transition-all ${
+                    isLiveCaptionsActive
+                      ? "bg-red-500/20 text-red-600 animate-pulse"
+                      : "bg-blue-500/20 text-blue-600 hover:opacity-80"
+                  }`}
+                >
+                  {isLiveCaptionsActive ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                  {isLiveCaptionsActive ? "إيقاف الترجمة" : "ترجمة حية"}
+                </button>
+              )}
               <button
                 onClick={() => setHighContrast(!highContrast)}
                 title="تباين عالي لذوي الإعاقة"
@@ -222,12 +426,146 @@ const AIPlannerPage = () => {
           >
             <Accessibility className="w-5 h-5 text-accent mt-0.5 shrink-0" />
             <div>
-              <p className="text-sm font-bold text-foreground">دعم ذوي الإعاقة السمعية</p>
+              <p className="text-sm font-bold text-foreground">دعم ذوي الإعاقة السمعية والبصرية</p>
               <p className="text-xs text-muted-foreground mt-1">
-                يمكنك الاستماع للاقتراح صوتياً أو قراءة النص المكتوب. كما يمكنك تفعيل وضع التباين العالي للوضوح البصري.
+                <strong>لضعاف السمع:</strong> اضغط &quot;ترجمة حية&quot; لتحويل أي كلام مسموع إلى نص مكتوب فوراً. يمكنك أيضاً الاستماع للاقتراح صوتياً أو قراءة النص.
+                <br />
+                <strong>لضعاف البصر:</strong> فعّل &quot;تباين عالي&quot; لتحسين الوضوح البصري.
               </p>
             </div>
           </motion.div>
+
+          {/* ===== LIVE CAPTIONS PANEL - Hearing Impairment Feature ===== */}
+          <AnimatePresence>
+            {isLiveCaptionsActive && showCaptionsPanel && (
+              <motion.div
+                initial={{ opacity: 0, y: -20, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -20, scale: 0.95 }}
+                transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                className="mb-6 rounded-2xl overflow-hidden card-shadow border-2 border-blue-400/40"
+              >
+                {/* Captions Header */}
+                <div className="bg-gradient-to-r from-blue-600 to-blue-500 px-5 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                      <Captions className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-white font-bold text-sm">الترجمة الحية - Live Captions</h3>
+                      <p className="text-blue-100 text-xs">يتم تحويل الكلام إلى نص في الوقت الفعلي</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={clearTranscript}
+                      title="مسح الترجمة"
+                      className="text-white/70 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setShowCaptionsPanel(false)}
+                      title="إخفاء اللوحة"
+                      className="text-white/70 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                    >
+                      <span className="text-xs font-bold">✕</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Captions Body */}
+                <div className="bg-slate-900 p-5 min-h-[120px] max-h-[250px] overflow-y-auto">
+                  {liveTranscript.length === 0 && !interimText ? (
+                    <div className="flex flex-col items-center justify-center py-6 text-center">
+                      <Mic className="w-10 h-10 text-blue-400/50 mb-3" />
+                      <p className="text-blue-200/60 text-sm">جاري الاستماع... تحدث الآن</p>
+                      <p className="text-blue-300/40 text-xs mt-1">سيظهر النص هنا تلقائياً عند الكلام</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {liveTranscript.map((entry) => (
+                        <motion.div
+                          key={entry.id}
+                          initial={{ opacity: 0, x: 10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          className="bg-white/10 rounded-xl px-4 py-2.5"
+                        >
+                          <p className="text-white text-sm leading-relaxed font-medium">{entry.text}</p>
+                          <p className="text-blue-300/50 text-xs mt-1">
+                            {entry.timestamp.toLocaleTimeString("ar-SA", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              second: "2-digit",
+                            })}
+                          </p>
+                        </motion.div>
+                      ))}
+                      {/* Interim (in-progress) text */}
+                      {interimText && (
+                        <div className="bg-blue-400/10 border border-blue-400/20 rounded-xl px-4 py-2.5">
+                          <p className="text-blue-200/70 text-sm leading-relaxed italic">{interimText}</p>
+                          <div className="flex items-center gap-1 mt-1">
+                            <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+                            <span className="text-blue-300/40 text-xs">جاري الاستماع...</span>
+                          </div>
+                        </div>
+                      )}
+                      <div ref={transcriptEndRef} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Captions Footer */}
+                <div className="bg-slate-800 px-5 py-2.5 flex items-center justify-between border-t border-slate-700">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${isLiveCaptionsActive ? "bg-green-400 animate-pulse" : "bg-gray-500"}`} />
+                    <span className="text-xs text-slate-400">
+                      {isLiveCaptionsActive ? "نشط - الاستماع مستمر" : "متوقف"}
+                    </span>
+                  </div>
+                  <span className="text-xs text-slate-500">
+                    {liveTranscript.length} {liveTranscript.length === 1 ? "جملة" : "جمل"}
+                  </span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Show collapsed captions indicator */}
+          {isLiveCaptionsActive && !showCaptionsPanel && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="mb-4"
+            >
+              <button
+                onClick={() => setShowCaptionsPanel(true)}
+                className="flex items-center gap-2 bg-blue-500/20 text-blue-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-500/30 transition-colors"
+              >
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                <Captions className="w-4 h-4" />
+                عرض لوحة الترجمة الحية ({liveTranscript.length} جمل)
+              </button>
+            </motion.div>
+          )}
+
+          {/* Floating live text indicator when captions panel is hidden */}
+          {isLiveCaptionsActive && interimText && !showCaptionsPanel && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mb-4 bg-slate-900/90 backdrop-blur-sm border border-blue-400/30 rounded-xl px-4 py-3"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <Mic className="w-3 h-3 text-blue-400 animate-pulse" />
+                <span className="text-blue-300/60 text-xs">ترجمة مباشرة:</span>
+              </div>
+              <p className="text-white text-sm">{interimText}</p>
+            </motion.div>
+          )}
 
           <div className="grid lg:grid-cols-3 gap-6">
             {/* Form */}
@@ -399,12 +737,12 @@ const AIPlannerPage = () => {
                       <Sparkles className="w-5 h-5 text-accent" />
                       <h2 className="text-xl font-bold text-foreground">اقتراح الذكاء الاصطناعي</h2>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       <button onClick={handleSpeak}
                         title={isSpeaking ? "إيقاف القراءة" : "استمع للاقتراح صوتياً"}
                         className="flex items-center gap-1 bg-accent/20 text-accent-foreground px-3 py-2 rounded-lg text-sm font-bold hover:opacity-90 transition-all">
                         {isSpeaking ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                        {isSpeaking ? "إيقاف" : "استماع 🔊"}
+                        {isSpeaking ? "إيقاف" : "استماع"}
                       </button>
                       <button onClick={handleSave} disabled={saving}
                         className="flex items-center gap-1 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-bold hover:opacity-90 disabled:opacity-60">
@@ -419,25 +757,25 @@ const AIPlannerPage = () => {
 
                   <div className="grid md:grid-cols-2 gap-4 mb-5">
                     <div className="bg-secondary/50 rounded-xl p-4">
-                      <h4 className="font-bold text-foreground text-sm mb-2">🎯 الأنشطة المقترحة</h4>
+                      <h4 className="font-bold text-foreground text-sm mb-2">الأنشطة المقترحة</h4>
                       <ul className="space-y-1">
                         {result.activities?.map((a, i) => (
-                          <li key={i} className="text-sm text-muted-foreground">• {a}</li>
+                          <li key={i} className="text-sm text-muted-foreground">- {a}</li>
                         ))}
                       </ul>
                     </div>
                     <div className="space-y-3">
                       <div className="bg-secondary/50 rounded-xl p-4">
-                        <h4 className="font-bold text-foreground text-sm mb-1">⏱ المدة المقترحة</h4>
+                        <h4 className="font-bold text-foreground text-sm mb-1">المدة المقترحة</h4>
                         <p className="text-sm text-muted-foreground">{result.duration}</p>
                       </div>
                       <div className="bg-secondary/50 rounded-xl p-4">
-                        <h4 className="font-bold text-foreground text-sm mb-1">💡 نصائح</h4>
+                        <h4 className="font-bold text-foreground text-sm mb-1">نصائح</h4>
                         <p className="text-sm text-muted-foreground">{result.tips}</p>
                       </div>
                       {result.estimated_cost && (
                         <div className="bg-secondary/50 rounded-xl p-4">
-                          <h4 className="font-bold text-foreground text-sm mb-1">💰 التكلفة التقريبية</h4>
+                          <h4 className="font-bold text-foreground text-sm mb-1">التكلفة التقريبية</h4>
                           <p className="text-sm text-muted-foreground">{result.estimated_cost}</p>
                         </div>
                       )}
